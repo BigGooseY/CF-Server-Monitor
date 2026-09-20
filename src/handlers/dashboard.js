@@ -216,7 +216,8 @@ export async function handleServersAPI(request, env, sys) {
   }
   markFrontendRealtimeActive();
   
-  const results = (await getAllServers(env.DB, isLoggedIn)).map(withoutPrivateServerFields);
+  const sourceServers = await getAllServers(env.DB, isLoggedIn);
+  const results = sourceServers.map(withoutPrivateServerFields);
   const shouldIncludeLatencyHistory = sys.show_three_net_details === 'true';
   
   const serverIds = results.map(server => server.id).filter(Boolean);

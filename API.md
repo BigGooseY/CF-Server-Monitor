@@ -1169,14 +1169,16 @@ Header：`X-Turnstile-Token: <token>`（当 `site_options.turnstile_enabled` 或
 ```json
 {
   "success": true,
-  "settings": { /* Settings 对象，见 5.4 */ },
+  "settings": { /* Settings 对象（不含 password），并包含 password_configured，见 5.4 */ },
   "api_secret": "<env.API_SECRET>"
 }
 ```
 
+`settings.password` 不会返回；`settings.password_configured` 表示是否已配置独立管理员密码。
+
 > `api_secret` 仅在 `get_settings` 中返回，方便前端展示/复制。
 >
-> ~~`settings` 包含 `jwt_secret`。~~ **2026-07-26 修订**：后端会从返回对象中剔除 `jwt_secret`；其他敏感值（如密码哈希、Cloudflare Token、Turnstile Secret）仍可能存在，必须使用 HTTPS 并限制管理 Token。
+> ~~`settings` 包含 `jwt_secret`。~~ **2026-09-19 修订**：后端会从返回对象中剔除 `jwt_secret`、`password` 和 GitHub Client Secret；其他敏感值（如 Cloudflare Token、Turnstile Secret）仍可能存在，必须使用 HTTPS 并限制管理 Token。
 
 ***
 
@@ -1904,7 +1906,7 @@ UUID 缺失或格式非法时返回 `400 { "error": "invalidServerId", "code": 4
   turnstile_site_key: string,
   turnstile_secret_key: string,
   username: string,
-  password: string,              // PBKDF2 哈希值；旧版 MD5 哈希会在成功登录后自动升级
+  password: string,              // PBKDF2 哈希值；旧版 MD5 哈希会在成功登录后自动升级；get_settings 不返回此字段
   cloudflare_account_id: string,
   cloudflare_token: string,
   custom_ct: string,             // 电信测速节点 host[:port]
@@ -1945,10 +1947,11 @@ Worker 同时注册了 cron 触发器（`scheduled` handler），可在 `wrangle
 
 | Cron          | 行为              | 备注                                                             |
 | ------------- | --------------- | -------------------------------------------------------------- |
-| `*/1 * * * *` | 每分钟：检测离线节点、资源告警 | `checkOfflineNodes`、`checkResourceAlerts`（通知） |
+| `*/1 * * * *` | 每分钟：检测离线节点、资源告警并投递通知任务 | `checkOfflineNodes`、`checkResourceAlerts`；失败任务按退避时间重试 |
 | `0 * * * *`   | 每小时：根据 UTC 日期分支 | 见下表                                                            |
-| <br />        | 每周日 0 点：表轮换    | `weeklyCleanup`（删除旧表、重命名 metrics\_history → metrics\_history\_old、创建新表） |
 | <br />        | 每小时按通知时区/到期提醒时间判断是否执行到期检测 | `checkExpiringServers` |
+| <br />        | 到期检测后按通知时区生成日/周/月流量报告 | `checkTrafficReports`；使用业务周期键去重 |
+| <br />        | 每周日 0 点：完成通知任务生成后再执行表轮换 | `weeklyCleanup`（删除旧表、重命名 metrics\_history → metrics\_history\_old、创建新表） |
 
 每周日 00:00–00:04 UTC 的表轮换窗口内，分钟任务会跳过离线节点检测。
 
