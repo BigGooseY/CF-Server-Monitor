@@ -46,7 +46,15 @@
               <HelpTooltip :text="trans.remoteImageTip" />
             </label>
             <div class="flex" style="gap:8px;">
-              <input type="text" v-model="settings.custom_bg" class="form-input flex-1" placeholder="https://...">
+              <div class="input-clear-wrap">
+                <input type="text" v-model="settings.custom_bg" class="form-input" placeholder="https://...">
+                <button
+                  v-if="settings.custom_bg"
+                  type="button"
+                  class="input-clear-btn"
+                  @click="settings.custom_bg = ''"
+                >×</button>
+              </div>
               <div class="upload-btn-wrapper">
                 <button class="btn btn-margin-0">📁 {{ trans.upload }}</button>
                 <input type="file" accept="image/*" @change="$emit('upload-bg', $event)">
@@ -61,7 +69,15 @@
               <HelpTooltip :text="trans.remoteImageTip" />
             </label>
             <div class="flex" style="gap:8px;">
-              <input type="text" v-model="settings.custom_bg_mobile" class="form-input flex-1" placeholder="https://...">
+              <div class="input-clear-wrap">
+                <input type="text" v-model="settings.custom_bg_mobile" class="form-input" placeholder="https://...">
+                <button
+                  v-if="settings.custom_bg_mobile"
+                  type="button"
+                  class="input-clear-btn"
+                  @click="settings.custom_bg_mobile = ''"
+                >×</button>
+              </div>
               <div class="upload-btn-wrapper">
                 <button class="btn btn-margin-0">📁 {{ trans.upload }}</button>
                 <input type="file" accept="image/*" @change="$emit('upload-bg-mobile', $event)">
@@ -76,7 +92,15 @@
               <HelpTooltip :text="trans.remoteImageTip" />
             </label>
             <div class="flex" style="gap:8px;">
-              <input type="text" v-model="settings.favicon" class="form-input flex-1" placeholder="https://...">
+              <div class="input-clear-wrap">
+                <input type="text" v-model="settings.favicon" class="form-input" placeholder="https://...">
+                <button
+                  v-if="settings.favicon"
+                  type="button"
+                  class="input-clear-btn"
+                  @click="settings.favicon = ''"
+                >×</button>
+              </div>
               <div class="upload-btn-wrapper">
                 <button class="btn btn-margin-0">📁 {{ trans.upload }}</button>
                 <input type="file" accept="image/*,.ico" @change="$emit('upload-favicon', $event)">
@@ -546,7 +570,7 @@
 
               <div class="form-group flex-1">
                 <label class="form-label">{{ trans.resourceAlertMetric }}</label>
-                <select v-model="rule.metric" class="form-select" @change="normalizeRuleThreshold(rule)">
+                <select :value="rule.metric" class="form-select" @change="onResourceAlertMetricChange(rule, $event)">
                   <option v-for="option in resourceAlertMetricOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
                 </select>
               </div>
@@ -636,16 +660,44 @@
           </div>
         </div>
 
-        <div class="form-group mt-4">
-          <label class="form-label">
-            {{ trans.jwtSecret }}
-            <HelpTooltip :text="trans.jwtSecretTip" />
-          </label>
-          <div class="password-input-wrapper">
-            <input type="text" name="jwt_secret" autocomplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other" v-model="settings.jwt_secret" :class="['form-input', { 'secret-input-masked': !passwordVisible.jwtSecret }]" placeholder="••••••••••••••••••••••••••••••••">
-            <button type="button" class="password-toggle" @click="$emit('toggle-password', 'jwtSecret')">
-              {{ passwordVisible.jwtSecret ? '🙈' : '👁️' }}
-            </button>
+        <div class="form-row">
+          <div class="form-group flex-1">
+            <label class="form-label">
+              {{ trans.jwtSecret }}
+              <HelpTooltip :text="trans.jwtSecretTip" />
+            </label>
+            <div class="password-input-wrapper">
+              <input type="text" name="jwt_secret" autocomplete="off" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other" v-model="settings.jwt_secret" :class="['form-input', { 'secret-input-masked': !passwordVisible.jwtSecret }]" placeholder="••••••••••••••••••••••••••••••••">
+              <button type="button" class="password-toggle" @click="$emit('toggle-password', 'jwtSecret')">
+                {{ passwordVisible.jwtSecret ? '🙈' : '👁️' }}
+              </button>
+            </div>
+          </div>
+
+          <div class="form-group flex-1">
+            <label class="form-label">
+              {{ trans.customUserAgent }}
+              <HelpTooltip :text="trans.customUserAgentTip" />
+            </label>
+            <div class="password-input-wrapper">
+              <input
+                v-model.trim="settings.ua"
+                type="text"
+                name="ua"
+                autocomplete="off"
+                data-lpignore="true"
+                data-1p-ignore="true"
+                data-bwignore="true"
+                data-form-type="other"
+                maxlength="100"
+                :class="['form-input', { 'secret-input-masked': !passwordVisible.ua, 'input-invalid': userAgentInvalid }]"
+                :placeholder="trans.customUserAgentPlaceholder"
+              >
+              <button type="button" class="password-toggle" @click="$emit('toggle-password', 'ua')">
+                {{ passwordVisible.ua ? '🙈' : '👁️' }}
+              </button>
+            </div>
+            <p v-if="userAgentInvalid" class="text-red text-sm mt-1">{{ trans.customUserAgentInvalid }}</p>
           </div>
         </div>
 
@@ -800,7 +852,7 @@
 
     <div class="settings-save-bar">
       <span class="settings-save-hint">{{ trans.saveHint }}</span>
-      <button @click="$emit('save-settings')" class="btn btn-primary btn-lg" :disabled="saving || hasPingNodeErrors">{{ saving ? '⏳' : '💾' }} {{ saving ? trans.saving : trans.saveConfig }}</button>
+      <button @click="$emit('save-settings')" class="btn btn-primary btn-lg" :disabled="saving || hasPingNodeErrors || userAgentInvalid">{{ saving ? '⏳' : '💾' }} {{ saving ? trans.saving : trans.saveConfig }}</button>
     </div>
   </div>
 </template>
@@ -1275,7 +1327,9 @@ const resourceAlertMetricOptions = computed(() => [
   { value: 'ram', label: props.trans.resourceAlertMetricRam || 'RAM (%)' },
   { value: 'disk', label: props.trans.resourceAlertMetricDisk || 'DISK (%)' },
   { value: 'netIn', label: props.trans.resourceAlertMetricNetIn || 'NET In (Mbps)' },
-  { value: 'netOut', label: props.trans.resourceAlertMetricNetOut || 'NET Out (Mbps)' }
+  { value: 'netOut', label: props.trans.resourceAlertMetricNetOut || 'NET Out (Mbps)' },
+  { value: 'tcpConn', label: props.trans.resourceAlertMetricTcp || 'TCP Conn' },
+  { value: 'udpConn', label: props.trans.resourceAlertMetricUdp || 'UDP Conn' }
 ])
 
 const resourceAlertIntervalOptions = computed(() => (
@@ -1355,14 +1409,37 @@ const resourceAlertServerSelectLabel = (rule) => {
 
 const createRuleId = () => `rule_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
 const isNetworkAlertMetric = metric => metric === 'netIn' || metric === 'netOut'
-const resourceAlertThresholdPlaceholder = metric => isNetworkAlertMetric(metric) ? '100' : '80'
-const resourceAlertThresholdMax = metric => isNetworkAlertMetric(metric) ? 100000 : 100
+const isConnectionAlertMetric = metric => metric === 'tcpConn' || metric === 'udpConn'
+const resourceAlertThresholdPlaceholder = metric => {
+  if (isConnectionAlertMetric(metric)) return '1000'
+  return isNetworkAlertMetric(metric) ? '100' : '80'
+}
+const resourceAlertThresholdMax = metric => {
+  if (isConnectionAlertMetric(metric)) return 10000000
+  return isNetworkAlertMetric(metric) ? 100000 : 100
+}
 
 const normalizeRuleThreshold = (rule) => {
   const threshold = Number(rule.threshold)
   const max = resourceAlertThresholdMax(rule.metric)
   if (!Number.isFinite(threshold) || threshold <= 0 || threshold > max) {
     rule.threshold = resourceAlertThresholdPlaceholder(rule.metric)
+  }
+}
+
+const alertMetricClass = metric => (
+  isConnectionAlertMetric(metric) ? 'count' : (isNetworkAlertMetric(metric) ? 'net' : 'percent')
+)
+
+// 百分比 / 网速 / 连接数三类的量纲不同，跨类切换时沿用旧阈值会得到 80 个连接这种明显错误的值。
+const onResourceAlertMetricChange = (rule, event) => {
+  const next = String(event?.target?.value || '')
+  const changedClass = alertMetricClass(rule.metric) !== alertMetricClass(next)
+  rule.metric = next
+  if (changedClass) {
+    rule.threshold = resourceAlertThresholdPlaceholder(next)
+  } else {
+    normalizeRuleThreshold(rule)
   }
 }
 
@@ -1403,6 +1480,14 @@ const pingNodeErrors = computed(() => Object.fromEntries(
 ))
 
 const hasPingNodeErrors = computed(() => Object.values(pingNodeErrors.value).some(Boolean))
+
+// 与服务端 settings.js / agent config.go 保持一致：只允许在请求头、config.conf、
+// 安装命令引号下都安全的字符；留空由服务端回退默认 cfsm。
+const USER_AGENT_ALLOWED_RE = /^[A-Za-z0-9 _.\-/,:;()+=@#*?~]*$/
+const userAgentInvalid = computed(() => {
+  const value = String(props.settings.ua ?? '').trim()
+  return value.length > 100 || !USER_AGENT_ALLOWED_RE.test(value)
+})
 
 const validatePingNodes = () => !hasPingNodeErrors.value
 

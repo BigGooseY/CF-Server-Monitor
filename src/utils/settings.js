@@ -13,8 +13,37 @@ import {
 
 export const APPEARANCE_FIELDS = ['site_title', 'custom_bg', 'custom_bg_mobile', 'favicon', 'custom_head', 'custom_script', 'csp_static', 'csp_api', 'display_mode', 'preferred_theme', 'default_language', 'theme_options'];
 
-export const SITE_FIELDS = ['auto_discovery', 'is_public', 'show_price', 'show_expire', 'show_tf', 'show_three_net_details', 'wss_report_enabled', 'wss_report_hours', 'frontend_ws_timeout_minutes', 'long_history_points', 'tg_notify', 'tg_bot_token', 'tg_chat_id', 'notification_timezone', 'notification_language', 'expire_notification_time', 'notification_webhook_enabled', 'notification_webhook_url', 'notification_webhook_method', 'notification_webhook_format', 'notification_webhook_headers', 'notification_webhook_body', 'notification_template', 'turnstile_enabled', 'turnstile_login_enabled', 'turnstile_site_key', 'turnstile_secret_key', 'jwt_secret', 'username', 'password', 'cloudflare_account_id', 'cloudflare_token', 'custom_ct', 'custom_cu', 'custom_cm', 'custom_bd', 'node_1', 'node_2', 'node_3', 'node_4', 'custom_ct_name', 'custom_cu_name', 'custom_cm_name', 'custom_bd_name', 'node_1_name', 'node_2_name', 'node_3_name', 'node_4_name', 'expire_reminder', 'resource_alert_rules', 'traffic_alert_threshold', 'theme_url', 'servers_optimized'];
+export const SITE_FIELDS = ['auto_discovery', 'is_public', 'show_price', 'show_expire', 'show_tf', 'show_three_net_details', 'wss_report_enabled', 'wss_report_hours', 'frontend_ws_timeout_minutes', 'long_history_points', 'tg_notify', 'tg_bot_token', 'tg_chat_id', 'notification_timezone', 'notification_language', 'expire_notification_time', 'notification_webhook_enabled', 'notification_webhook_url', 'notification_webhook_method', 'notification_webhook_format', 'notification_webhook_headers', 'notification_webhook_body', 'notification_template', 'turnstile_enabled', 'turnstile_login_enabled', 'turnstile_site_key', 'turnstile_secret_key', 'jwt_secret', 'username', 'password', 'cloudflare_account_id', 'cloudflare_token', 'custom_ct', 'custom_cu', 'custom_cm', 'custom_bd', 'node_1', 'node_2', 'node_3', 'node_4', 'custom_ct_name', 'custom_cu_name', 'custom_cm_name', 'custom_bd_name', 'node_1_name', 'node_2_name', 'node_3_name', 'node_4_name', 'expire_reminder', 'resource_alert_rules', 'traffic_alert_threshold', 'theme_url', 'servers_optimized', 'ua'];
 
+// 导出/导入服务器时一并迁移站点与外观设置。以下字段与当前部署的环境强绑定，
+// 直接覆盖会让目标站点无法登录、探针失联或告警错位，因此既不导出也不导入：
+// - username/password/jwt_secret：覆盖后旧凭据失效，当前登录会被强制退出
+// - turnstile_*：站点密钥绑定域名白名单，覆盖后未加白的新域名会直接不可访问
+// - ua：自定义 UA 通常配套域名防护规则，覆盖后上报全部失败，机器全部掉线
+// - resource_alert_rules：规则里存的是服务器 ID，跨站点覆盖后 ID 对不上
+// - csp_static/csp_api：CSP 白名单按域名配置，跨站点覆盖会拦掉本站静态资源与接口
+// - servers_optimized：历史分区迁移完成标记，跨库覆盖会让目标库重排 history_partition_id
+// Cloudflare 账号/令牌按需求保留在导入导出内（同账号迁移时需要一起带走）。
+export const SETTINGS_EXCLUDED_FIELDS = [
+  'username',
+  'password',
+  'jwt_secret',
+  'turnstile_enabled',
+  'turnstile_login_enabled',
+  'turnstile_site_key',
+  'turnstile_secret_key',
+  'ua',
+  'resource_alert_rules',
+  'csp_static',
+  'csp_api',
+  'servers_optimized'
+];
+
+export const IMPORTABLE_SITE_FIELDS = SITE_FIELDS.filter((field) => !SETTINGS_EXCLUDED_FIELDS.includes(field));
+export const IMPORTABLE_APPEARANCE_FIELDS = APPEARANCE_FIELDS.filter((field) => !SETTINGS_EXCLUDED_FIELDS.includes(field));
+
+export const DEFAULT_USER_AGENT = 'cfsm';
+export const USER_AGENT_MAX_LENGTH = 100;
 export const TG_NOTIFY_MINUTES_MIN = 2;
 export const TG_NOTIFY_MINUTES_MAX = 30;
 export const TG_NOTIFY_LEGACY_TRUE_MINUTES = 5;
@@ -52,13 +81,23 @@ export const RESOURCE_ALERT_METRIC_RAM = 'ram';
 export const RESOURCE_ALERT_METRIC_DISK = 'disk';
 export const RESOURCE_ALERT_METRIC_NET_IN = 'netIn';
 export const RESOURCE_ALERT_METRIC_NET_OUT = 'netOut';
+export const RESOURCE_ALERT_METRIC_TCP_CONN = 'tcpConn';
+export const RESOURCE_ALERT_METRIC_UDP_CONN = 'udpConn';
 export const RESOURCE_ALERT_METRICS = [
   RESOURCE_ALERT_METRIC_CPU,
   RESOURCE_ALERT_METRIC_RAM,
   RESOURCE_ALERT_METRIC_DISK,
   RESOURCE_ALERT_METRIC_NET_IN,
-  RESOURCE_ALERT_METRIC_NET_OUT
+  RESOURCE_ALERT_METRIC_NET_OUT,
+  RESOURCE_ALERT_METRIC_TCP_CONN,
+  RESOURCE_ALERT_METRIC_UDP_CONN
 ];
+// 连接数类指标的阈值是绝对数量，不是百分比或 Mbps。
+const RESOURCE_ALERT_CONNECTION_METRICS = [
+  RESOURCE_ALERT_METRIC_TCP_CONN,
+  RESOURCE_ALERT_METRIC_UDP_CONN
+];
+const RESOURCE_ALERT_CONNECTION_THRESHOLD_MAX = 10000000;
 const BYTES_PER_MEGABIT = 1000 * 1000 / 8;
 let cachedSiteSettings = null;
 let siteSettingsCacheExpiry = 0;
@@ -128,7 +167,8 @@ const defaults = {
   resource_alert_rules: [],
   traffic_alert_threshold: '0',
   theme_url: '',
-  servers_optimized: 'false'
+  servers_optimized: 'false',
+  ua: DEFAULT_USER_AGENT
 };
 
 export function normalizeLongHistoryPoints(value) {
@@ -138,6 +178,28 @@ export function normalizeLongHistoryPoints(value) {
       ? points
       : DEFAULT_LONG_HISTORY_POINTS
   );
+}
+
+// 自定义 UA 会同时出现在四个载体上：上报请求头、/update 响应头、agent 的 config.conf、
+// 安装命令（shell / PowerShell / docker -e）。因此只放行一套在所有载体上都安全的字符：
+// 字母、数字、空格，以及 . _ - / , : ; ( ) + = @ # * ? ~
+// 排除项及其原因：引号和反斜杠破坏 KV 格式；单引号破坏 shell 引号；反引号/$/&/|/<>/^ 破坏
+// shell 语义；% 会被误当转义；! 在部分 shell 有历史展开；非 ASCII 会让 header 写入直接报错。
+const USER_AGENT_ALLOWED_RE = /^[A-Za-z0-9 _.\-/,:;()+=@#*?~]+$/;
+
+export function validateUserAgent(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return { valid: true, value: DEFAULT_USER_AGENT };
+  if (raw.length > USER_AGENT_MAX_LENGTH) return { valid: false, value: DEFAULT_USER_AGENT };
+  if (!USER_AGENT_ALLOWED_RE.test(raw)) {
+    return { valid: false, value: DEFAULT_USER_AGENT };
+  }
+  return { valid: true, value: raw };
+}
+
+export function sanitizeUserAgent(value) {
+  const result = validateUserAgent(value);
+  return result.valid ? result.value : DEFAULT_USER_AGENT;
 }
 
 export function normalizeFrontendWsTimeoutMinutes(value) {
@@ -287,6 +349,17 @@ export function normalizeResourceAlertMbps(value) {
   return String(Math.round(number * 100) / 100);
 }
 
+function normalizeResourceAlertConnectionCount(value) {
+  if (value === undefined || value === null || value === '') return '0';
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0 || number > RESOURCE_ALERT_CONNECTION_THRESHOLD_MAX) return '0';
+  return String(Math.round(number));
+}
+
+function isResourceAlertConnectionMetric(metric) {
+  return RESOURCE_ALERT_CONNECTION_METRICS.includes(metric);
+}
+
 export function normalizeResourceAlertMode(value) {
   const mode = String(value || '').trim().toLowerCase();
   return mode === RESOURCE_ALERT_MODE_CONTINUOUS
@@ -330,7 +403,9 @@ function normalizeResourceAlertRuleName(value, metric, index) {
     [RESOURCE_ALERT_METRIC_RAM]: 'RAM',
     [RESOURCE_ALERT_METRIC_DISK]: 'DISK',
     [RESOURCE_ALERT_METRIC_NET_IN]: 'NET In',
-    [RESOURCE_ALERT_METRIC_NET_OUT]: 'NET Out'
+    [RESOURCE_ALERT_METRIC_NET_OUT]: 'NET Out',
+    [RESOURCE_ALERT_METRIC_TCP_CONN]: 'TCP Conn',
+    [RESOURCE_ALERT_METRIC_UDP_CONN]: 'UDP Conn'
   };
   return `${labels[metric] || 'Resource'} Alert ${index + 1}`;
 }
@@ -351,6 +426,7 @@ function normalizeResourceAlertServers(value) {
 }
 
 function getDefaultResourceAlertThreshold(metric) {
+  if (isResourceAlertConnectionMetric(metric)) return '1000';
   return metric === RESOURCE_ALERT_METRIC_NET_IN || metric === RESOURCE_ALERT_METRIC_NET_OUT
     ? '100'
     : '80';
@@ -358,9 +434,14 @@ function getDefaultResourceAlertThreshold(metric) {
 
 export function normalizeResourceAlertThreshold(value, metric) {
   const fallback = getDefaultResourceAlertThreshold(metric);
-  const normalized = metric === RESOURCE_ALERT_METRIC_NET_IN || metric === RESOURCE_ALERT_METRIC_NET_OUT
-    ? normalizeResourceAlertMbps(value)
-    : normalizeResourceAlertPercent(value);
+  let normalized;
+  if (isResourceAlertConnectionMetric(metric)) {
+    normalized = normalizeResourceAlertConnectionCount(value);
+  } else if (metric === RESOURCE_ALERT_METRIC_NET_IN || metric === RESOURCE_ALERT_METRIC_NET_OUT) {
+    normalized = normalizeResourceAlertMbps(value);
+  } else {
+    normalized = normalizeResourceAlertPercent(value);
+  }
   return Number(normalized) > 0 ? normalized : fallback;
 }
 
@@ -419,7 +500,9 @@ export function getResourceAlertRuleThresholds(rule) {
     diskPercent: metric === RESOURCE_ALERT_METRIC_DISK ? threshold : 0,
     netInBps: metric === RESOURCE_ALERT_METRIC_NET_IN ? threshold * BYTES_PER_MEGABIT : 0,
     netOutBps: metric === RESOURCE_ALERT_METRIC_NET_OUT ? threshold * BYTES_PER_MEGABIT : 0,
-    netTotalBps: 0
+    netTotalBps: 0,
+    tcpConn: metric === RESOURCE_ALERT_METRIC_TCP_CONN ? threshold : 0,
+    udpConn: metric === RESOURCE_ALERT_METRIC_UDP_CONN ? threshold : 0
   };
 }
 
@@ -573,9 +656,14 @@ export function isWssReportEnabled(settings = {}, now = Date.now()) {
   return getWssReportScheduleState(settings, now).active;
 }
 
+// 这些字段是在旧版「逐 key 存 settings」方案废弃之后才加入的，库里不可能存在对应的旧行，
+// 因此缺失时直接回退默认值即可。把它们排除在 hasMissingFields 之外，避免老部署每次
+// 刷新设置缓存都多做一次 SELECT * FROM settings 的兼容查询。
+const LEGACY_FALLBACK_EXEMPT_FIELDS = new Set(['ua']);
+
 function hasMissingFields(source, fields) {
   if (!source || typeof source !== 'object') return true;
-  return fields.some(field => source[field] === undefined);
+  return fields.some(field => source[field] === undefined && !LEGACY_FALLBACK_EXEMPT_FIELDS.has(field));
 }
 
 async function loadLegacySettings(db, fields) {
@@ -679,6 +767,7 @@ export async function loadSiteSettings(db, options = {}) {
     result.notification_language = normalizeNotificationLanguage(result.notification_language);
     result.expire_notification_time = normalizeExpireNotificationTime(result.expire_notification_time);
     result.traffic_alert_threshold = normalizeTrafficAlertThreshold(result.traffic_alert_threshold);
+    result.ua = sanitizeUserAgent(result.ua);
   } catch (e) {
     console.error('加载站点设置失败:', e);
     if (cachedSiteSettings) {
@@ -697,6 +786,24 @@ export async function loadSiteSettings(db, options = {}) {
 export function clearSiteSettingsCache() {
   cachedSiteSettings = null;
   siteSettingsCacheExpiry = 0;
+}
+
+// 外观设置的公共归一化。只处理实际存在的字段：老库可能还靠 legacy 单键存这几项，
+// 凭空补默认值会把原设置覆盖掉。
+export function normalizeAppearanceOptions(options = {}) {
+  if (!isValidThemeOptions(options.theme_options)) {
+    delete options.theme_options;
+  }
+  if ('display_mode' in options) {
+    options.display_mode = normalizeDisplayMode(options.display_mode, defaults.display_mode);
+  }
+  if ('preferred_theme' in options) {
+    options.preferred_theme = normalizePreferredTheme(options.preferred_theme);
+  }
+  if ('default_language' in options) {
+    options.default_language = normalizeDefaultLanguage(options.default_language);
+  }
+  return options;
 }
 
 export async function loadAppearanceOptions(db) {
@@ -728,9 +835,7 @@ export async function loadAppearanceOptions(db) {
       copyFields(result, legacy, APPEARANCE_FIELDS);
     }
     copyFields(result, appearanceOptions, APPEARANCE_FIELDS);
-    result.display_mode = normalizeDisplayMode(result.display_mode, defaults.display_mode);
-    result.preferred_theme = normalizePreferredTheme(result.preferred_theme);
-    result.default_language = normalizeDefaultLanguage(result.default_language);
+    normalizeAppearanceOptions(result);
   } catch (e) {
     console.error('加载外观设置失败:', e);
   }
@@ -769,6 +874,28 @@ export async function saveThemeOptions(db, themeOptions) {
 
   clearAppearanceSettingsCache();
   return themeOptions;
+}
+
+// 导入外观设置时按字段合并写入，避免只带部分字段的备份把未涉及的字段清空。
+export async function saveAppearanceOptions(db, updates = {}) {
+  const row = await db.prepare(
+    "SELECT value FROM settings WHERE key = 'appearance_options'"
+  ).first();
+  const existing = row && row.value ? tryParseJSON(row.value) || {} : {};
+
+  const merged = { ...existing, ...updates };
+  const appearanceOptions = {};
+  for (const field of APPEARANCE_FIELDS) {
+    if (field in merged) appearanceOptions[field] = merged[field];
+  }
+  normalizeAppearanceOptions(appearanceOptions);
+
+  await db.prepare(
+    'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
+  ).bind('appearance_options', JSON.stringify(appearanceOptions)).run();
+
+  clearAppearanceSettingsCache();
+  return appearanceOptions;
 }
 
 export async function loadSettings(db) {
@@ -815,6 +942,7 @@ export async function saveSiteOptions(db, updates) {
   siteOptions.notification_language = normalizeNotificationLanguage(siteOptions.notification_language);
   siteOptions.expire_notification_time = normalizeExpireNotificationTime(siteOptions.expire_notification_time);
   siteOptions.traffic_alert_threshold = normalizeTrafficAlertThreshold(siteOptions.traffic_alert_threshold);
+  siteOptions.ua = sanitizeUserAgent(siteOptions.ua);
   
   await db.prepare(
     'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
