@@ -6,6 +6,10 @@ compatibility_flags = ["nodejs_compat"]
 
 keep_vars = true
 
+# 关闭 workers.dev 与 Preview URLs，避免每次 Workers Builds 部署重新打开（仅走自定义域 cfsm.biggoosehub.com）
+workers_dev = false
+preview_urls = false
+
 # 定时任务配置（UTC）
 # - 每分钟：执行离线节点、资源告警
 # - 每小时：合并执行其他定时任务（表轮换、旧表清理、按配置时区/小时触发服务器到期检测）
